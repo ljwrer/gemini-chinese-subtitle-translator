@@ -1,5 +1,5 @@
-import { robot } from "./robot";
-import { shortStringify } from "./util";
+import {robot} from "./robot";
+import {shortStringify} from "./util";
 
 export class BatchTranslator {
   batchSize = 400;
@@ -27,14 +27,14 @@ export class BatchTranslator {
       if (exists) {
         console.log(`批次文件已存在，跳过翻译: ${batchFilePath}`);
         const batchContent = await file.text();
-        const batchChunk = await this.safeParseJson(batchContent);
+        const batchChunk = await this.safeParseJson(batchContent, batchFilePath);
         batches.push(...batchChunk);
         continue;
       }
       console.log(`开始翻译第 ${i + 1} 批: ${batchFilePath}`);
       const translatedStr = await robot.translate(batchStr);
       await Bun.write(batchFilePath, translatedStr);
-      const translatedList =  await this.safeParseJson(translatedStr);
+      const translatedList = await this.safeParseJson(translatedStr, batchFilePath);
       batches.push(...translatedList);
       console.log(`已生成第 ${i + 1} 批翻译文件: ${batchFilePath}`);
     }
@@ -43,7 +43,7 @@ export class BatchTranslator {
     return batchJson;
   }
 
-  async safeParseJson(text) {
+  async safeParseJson(text, filePath) {
     try {
       return JSON.parse(text);
     } catch (err) {
@@ -51,7 +51,13 @@ export class BatchTranslator {
       console.warn(`⚠️ JSON 解析失败，尝试调用 AI 修复...`);
       const fixed = await robot.fix(text);
       try {
-        return JSON.parse(fixed);
+        const parsed = JSON.parse(fixed);
+        // ✅ 保存修复后的内容到缓存文件
+        if (filePath) {
+          await Bun.write(filePath, shortStringify(parsed));
+          console.log(`已将修复后的 JSON 覆盖保存到: ${filePath}`);
+        }
+        return parsed;
       } catch (err2) {
         console.error(err2);
         console.error(`❌ 修复后的 JSON 仍然解析失败！`);
@@ -60,6 +66,7 @@ export class BatchTranslator {
       }
     }
   }
+
 
   async mergeBatches() {
     const mergedList = [];
